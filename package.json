@@ -1,5 +1,5 @@
 {
-  "name": "@azumag/opencode-rate-limit-fallback",
+  "name": "@droidox/opencode-rate-limit-fallback",
   "version": "1.73.0",
   "description": "OpenCode plugin that automatically switches to fallback models when rate limited",
   "main": "dist/index.js",
@@ -13,15 +13,22 @@
     "ai"
   ],
   "author": "azumag",
+  "contributors": [
+    "azumag (original author)",
+    "Droidox"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/azumag/opencode-rate-limit-fallback.git"
+    "url": "git+https://github.com/Droidox/opencode-rate-limit-fallback.git"
   },
   "bugs": {
-    "url": "https://github.com/azumag/opencode-rate-limit-fallback/issues"
+    "url": "https://github.com/Droidox/opencode-rate-limit-fallback/issues"
   },
-  "homepage": "https://github.com/azumag/opencode-rate-limit-fallback#readme",
+  "homepage": "https://github.com/Droidox/opencode-rate-limit-fallback#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
