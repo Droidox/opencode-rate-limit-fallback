@@ -16,7 +16,7 @@ function makeConfig(): PluginConfig {
   } as PluginConfig;
 }
 
-describe('ModelSelector reset-window awareness (#229)', () => {
+describe('ModelSelector reset-window awareness', () => {
   let selector: ModelSelector;
   const client = { toast: { showToast: vi.fn() } } as unknown as OpenCodeClient;
 
@@ -44,7 +44,6 @@ describe('ModelSelector reset-window awareness (#229)', () => {
     const resetAt = Date.now() + 4 * 60 * 60 * 1000; // 4h hard cap
     selector.markModelRateLimited('anthropic', 'claude-3-5-sonnet-20250514', resetAt);
 
-    // After the fixed 60s cooldown it is STILL cooling (would have recovered pre-#229).
     vi.advanceTimersByTime(120_000);
     expect(selector.getSoonestReset()).toBe(resetAt);
 
