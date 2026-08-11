@@ -198,6 +198,31 @@ export interface ErrorPattern {
 }
 
 /**
+ * Classification of a rate-limit-style error by its limit semantics (#229):
+ * - "benign-notice": not a limit (e.g. Anthropic "not your plan limits") — ignore.
+ * - "per-model-transient": per-model TPM burst (e.g. Alibaba "Allocated quota
+ *   exceeded") — retry SAME model after backoff before hopping.
+ * - "account-wide": whole-account limit (e.g. real Anthropic 429) — skip the
+ *   whole provider, a sibling model would hit the same limit.
+ * - "hard-cap-with-reset": hard cap with a known reset (e.g. "Resets in 4h",
+ *   Retry-After) — skip until the reset time.
+ * - "unknown-limit": rate-limit matched but class undetermined — legacy behavior.
+ */
+export type LimitClass =
+  | 'benign-notice'
+  | 'per-model-transient'
+  | 'account-wide'
+  | 'hard-cap-with-reset'
+  | 'unknown-limit';
+
+export interface LimitClassification {
+  limitClass: LimitClass;
+  provider?: string;
+  /** Absolute epoch-ms when the limited resource is expected to recover, if known. */
+  resetAt?: number;
+}
+
+/**
  * Error pattern configuration
  */
 export interface ErrorPatternsConfig {
