@@ -1,5 +1,8 @@
 name: npm publish
 
+permissions:
+  contents: read
+
 on:
   workflow_run:
     workflows: ["CI"]
@@ -46,6 +49,6 @@ jobs:
           path: dist/
           run_id: ${{ github.event.workflow_run.id }}
       
-      - run: npm publish --access public --ignore-scripts
+      - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
