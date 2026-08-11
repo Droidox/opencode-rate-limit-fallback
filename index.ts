@@ -371,8 +371,8 @@ export const RateLimitFallback: Plugin = async ({ client, directory, worktree })
               logger.debug('Pattern learning failed', { error: err });
             });
           }
-          const { resetAt } = errorPatternRegistry.classifyLimit(error);
-          await fallbackHandler.handleRateLimitFallback(sessionID, "", "", resetAt);
+          const { resetAt, limitClass } = errorPatternRegistry.classifyLimit(error);
+          await fallbackHandler.handleRateLimitFallback(sessionID, "", "", resetAt, limitClass);
         }
       }
 
@@ -393,8 +393,8 @@ export const RateLimitFallback: Plugin = async ({ client, directory, worktree })
               logger.debug('Pattern learning failed', { error: err });
             });
           }
-          const { resetAt } = errorPatternRegistry.classifyLimit(info.error, info.providerID);
-          await fallbackHandler.handleRateLimitFallback(info.sessionID, info.providerID || "", info.modelID || "", resetAt);
+          const { resetAt, limitClass } = errorPatternRegistry.classifyLimit(info.error, info.providerID);
+          await fallbackHandler.handleRateLimitFallback(info.sessionID, info.providerID || "", info.modelID || "", resetAt, limitClass);
         } else if (info?.status === "completed" && !info?.error && info?.id) {
           // Record fallback success
           fallbackHandler.handleMessageUpdated(info.sessionID, info.id, false, false);

@@ -167,3 +167,17 @@ export const DEFAULT_ERROR_PATTERNS_CONFIG = {
   minErrorFrequency: 3,
   learningWindowMs: 86400000,
 } as const;
+
+// ============================================================================
+// Same-Model Retry Defaults (#225 / #229 PR-C)
+// ============================================================================
+
+/**
+ * Default same-model retry configuration. backoffMs ~= Alibaba Token-Plan TPM
+ * recovery window (~60s), maxAttempts bounded so we retry-in-place before hopping.
+ */
+export const DEFAULT_SAME_MODEL_RETRY_CONFIG = {
+  enabled: true,
+  maxAttempts: 2,
+  backoffMs: 60000,
+} as const;
