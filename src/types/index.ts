@@ -278,6 +278,17 @@ export interface ConfigReloadConfig {
 }
 
 /**
+ * Same-model retry-in-place configuration (#225 / #229 PR-C).
+ * For per-model-transient limits (e.g. Alibaba Token-Plan TPM burst), retry the
+ * SAME model after a short backoff instead of immediately hopping the chain.
+ */
+export interface SameModelRetryConfig {
+  enabled: boolean;
+  maxAttempts: number;
+  backoffMs: number;
+}
+
+/**
  * Result of a configuration reload operation
  */
 export interface ReloadResult {
@@ -319,6 +330,7 @@ export interface PluginConfig {
   errorPatterns?: ErrorPatternsConfig;
   configReload?: ConfigReloadConfig;
   dynamicPrioritization?: DynamicPrioritizationConfig;
+  sameModelRetry?: SameModelRetryConfig;
 }
 
 // ============================================================================

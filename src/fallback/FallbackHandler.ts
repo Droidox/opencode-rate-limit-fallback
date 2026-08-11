@@ -3,7 +3,7 @@
  */
 
 import type { Logger } from '../../logger.js';
-import type { FallbackModel, PluginConfig, OpenCodeClient, MessagePart, SessionHierarchy } from '../types/index.js';
+import type { FallbackModel, PluginConfig, OpenCodeClient, MessagePart, SessionHierarchy, LimitClass } from '../types/index.js';
 import { SESSION_ENTRY_TTL_MS } from '../types/index.js';
 import { MetricsManager } from '../metrics/MetricsManager.js';
 import { ModelSelector } from './ModelSelector.js';
@@ -28,6 +28,7 @@ export class FallbackHandler {
   private retryState: Map<string, { attemptedModels: Set<string>; lastAttemptTime: number }>;
   private fallbackInProgress: Map<string, number>;
   private fallbackMessages: Map<string, { sessionID: string; messageID: string; timestamp: number }>;
+  private sameModelRetries: Map<string, { count: number; lastAttemptTime: number }>;
   private sessionLock: Set<string>;
 
   // Metrics manager reference
@@ -81,6 +82,7 @@ export class FallbackHandler {
     this.retryState = new Map();
     this.fallbackInProgress = new Map();
     this.fallbackMessages = new Map();
+    this.sameModelRetries = new Map();
     this.sessionLock = new Set();
 
     // Initialize retry manager
@@ -210,7 +212,7 @@ export class FallbackHandler {
   /**
    * Handle the rate limit fallback process
    */
-  async handleRateLimitFallback(sessionID: string, currentProviderID: string, currentModelID: string, resetAt?: number): Promise<void> {
+  async handleRateLimitFallback(sessionID: string, currentProviderID: string, currentModelID: string, resetAt?: number, limitClass?: LimitClass): Promise<void> {
     // Resolve target session before acquiring lock
     const rootSessionID = this.subagentTracker.getRootSession(sessionID);
     const targetSessionID = rootSessionID || sessionID;
@@ -315,6 +317,64 @@ export class FallbackHandler {
       if (delay > 0) {
         this.logger.debug(`Applying retry delay`, { delayMs: delay });
         await new Promise(resolve => setTimeout(resolve, delay));
+      }
+
+      // Same-model retry-in-place for per-model-transient limits (#225 / #229 PR-C).
+      // For a per-model TPM burst (e.g. Alibaba Token-Plan), retry the SAME model
+      // after a short backoff before hopping the chain. Bounded by maxAttempts.
+      if (
+        limitClass === 'per-model-transient' &&
+        this.config.sameModelRetry?.enabled &&
+        currentProviderID &&
+        currentModelID
+      ) {
+        const { maxAttempts, backoffMs } = this.config.sameModelRetry;
+        const sameModelKey = getStateKey(
+          dedupSessionID,
+          `${lastUserMessage.info.id}:${getModelKey(currentProviderID, currentModelID)}`
+        );
+        const prior = this.sameModelRetries.get(sameModelKey);
+        const count = prior?.count ?? 0;
+
+        if (count < maxAttempts) {
+          const parts = extractMessageParts(lastUserMessage);
+          if (parts.length === 0) {
+            this.fallbackInProgress.delete(fallbackKey);
+            return;
+          }
+
+          this.sameModelRetries.set(sameModelKey, { count: count + 1, lastAttemptTime: Date.now() });
+
+          await safeShowToast(this.client, {
+            body: {
+              title: "Retrying Same Model",
+              message: `Transient limit on ${currentModelID} — retrying in ${formatDuration(backoffMs)} (attempt ${count + 1}/${maxAttempts})`,
+              variant: "info",
+              duration: 3000,
+            },
+          });
+
+          if (backoffMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+          }
+
+          this.fallbackMessages.set(fallbackKey, {
+            sessionID: dedupSessionID,
+            messageID: lastUserMessage.info.id,
+            timestamp: Date.now(),
+          });
+
+          await this.retryWithModel(
+            dedupSessionID,
+            { providerID: currentProviderID, modelID: currentModelID },
+            parts,
+            hierarchy
+          );
+          return;
+        }
+
+        // Same-model attempts exhausted: drop the counter and fall through to the jump path.
+        this.sameModelRetries.delete(sameModelKey);
       }
 
       // Select the next fallback model
@@ -523,6 +583,12 @@ export class FallbackHandler {
       }
     }
 
+    for (const [key, entry] of this.sameModelRetries.entries()) {
+      if (now - entry.lastAttemptTime > STATE_TIMEOUT_MS) {
+        this.sameModelRetries.delete(key);
+      }
+    }
+
     for (const [fallbackKey, fallbackInfo] of this.fallbackMessages.entries()) {
       if (now - fallbackInfo.timestamp > SESSION_ENTRY_TTL_MS) {
         this.fallbackInProgress.delete(fallbackKey);
@@ -548,6 +614,7 @@ export class FallbackHandler {
     this.retryState.clear();
     this.fallbackInProgress.clear();
     this.fallbackMessages.clear();
+    this.sameModelRetries.clear();
     this.sessionLock.clear();
     this.retryManager.destroy();
 
