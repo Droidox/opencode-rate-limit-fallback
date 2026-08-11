@@ -2,10 +2,45 @@
  * Error Pattern Registry for rate limit error detection
  */
 
-import type { ErrorPattern, LearnedPattern, PatternLearningConfig } from '../types/index.js';
+import type { ErrorPattern, LearnedPattern, PatternLearningConfig, LimitClassification } from '../types/index.js';
 import type { Logger } from '../../logger.js';
 import { DEFAULT_ERROR_PATTERNS_CONFIG } from '../config/defaults.js';
 import { PatternLearner } from './PatternLearner.js';
+import { ResetWindowParser } from './ResetWindowParser.js';
+
+/**
+ * Signals that a limit is account/plan-wide (a sibling model of the same
+ * provider would hit it too) rather than per-model. Used to classify errors
+ * as "account-wide" so the engine skips the whole provider (#229).
+ */
+const ACCOUNT_WIDE_SIGNALS: readonly (string | RegExp)[] = [
+  'rate_limit_error',
+  'account',
+  'organization',
+  'plan limit',
+  'plan_limit',
+  'daily limit',
+  'insufficient_quota',
+  'you exceeded your current quota',
+];
+
+/**
+ * Signals that a limit is per-model and transient (per-minute TPM / burst that
+ * recovers in ~60s), e.g. Alibaba Token Plan "Allocated quota exceeded". Used to
+ * classify errors as "per-model-transient" so the engine retries the SAME model
+ * after a short backoff before hopping (#225 / #229).
+ */
+const PER_MODEL_TRANSIENT_SIGNALS: readonly (string | RegExp)[] = [
+  'allocated quota exceeded',
+  'requests rate limit exceeded',
+  'tokens per minute',
+  'tpm',
+  'requests per minute',
+  'rpm',
+  'high concurrency',
+  'reduce concurrency',
+  'too many requests',
+];
 
 /**
  * Error Pattern Registry class
@@ -236,6 +271,76 @@ export class ErrorPatternRegistry {
     }
 
     return this.matchesIgnorePattern(allText);
+  }
+
+  /**
+   * Classify an error by its limit semantics (#229). Single decision point that
+   * unifies the benign-notice gate with the provider-limit taxonomy so the
+   * fallback engine can act correctly (ignore / retry-same / skip-provider /
+   * skip-until-reset) instead of always hopping to the next model.
+   */
+  classifyLimit(error: unknown, provider?: string, now: number = Date.now()): LimitClassification {
+    const text = this.extractErrorText(error);
+    const resolvedProvider = provider || this.getMatchedPattern(error)?.provider;
+
+    const strong = this.hasStrongRateLimitSignal(text);
+
+    // Benign notice: an ignorePattern match with no strong rate-limit signal.
+    if (!strong && this.matchesIgnorePattern(text)) {
+      return { limitClass: 'benign-notice', provider: resolvedProvider };
+    }
+
+    // A reset time is the strongest signal regardless of scope — skip until it.
+    const resetAt = ResetWindowParser.parse(text, now);
+    if (resetAt !== undefined) {
+      return { limitClass: 'hard-cap-with-reset', provider: resolvedProvider, resetAt };
+    }
+
+    // Not a rate limit at all -> nothing for the engine to do.
+    if (!this.isRateLimitError(error)) {
+      return { limitClass: 'benign-notice', provider: resolvedProvider };
+    }
+
+    if (this.matchesAny(text, ACCOUNT_WIDE_SIGNALS)) {
+      return { limitClass: 'account-wide', provider: resolvedProvider };
+    }
+
+    if (this.matchesAny(text, PER_MODEL_TRANSIENT_SIGNALS)) {
+      return { limitClass: 'per-model-transient', provider: resolvedProvider };
+    }
+
+    return { limitClass: 'unknown-limit', provider: resolvedProvider };
+  }
+
+  private extractErrorText(error: unknown): string {
+    if (!error || typeof error !== 'object') {
+      return '';
+    }
+
+    const err = error as {
+      name?: string;
+      message?: string;
+      data?: {
+        statusCode?: number;
+        message?: string;
+        responseBody?: string;
+      };
+    };
+
+    const responseBody = String(err.data?.responseBody || '');
+    const message = String(err.data?.message || err.message || '');
+    const name = String(err.name || '');
+    const statusCode = err.data?.statusCode?.toString() || '';
+    return [responseBody, message, name, statusCode].join(' ').toLowerCase();
+  }
+
+  private matchesAny(text: string, patterns: readonly (string | RegExp)[]): boolean {
+    for (const pattern of patterns) {
+      if (this.matchesPattern(pattern, text)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
