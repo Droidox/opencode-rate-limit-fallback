@@ -6,12 +6,12 @@ import type { PluginConfig, OpenCodeClient } from '../../src/types/index.js';
 import { Logger } from '../../logger.js';
 
 /**
- * PR-C (#225 / #229): same-model retry-in-place for `per-model-transient` limits.
+ * Same-model retry-in-place for `per-model-transient` limits.
  * The engine should retry the SAME model after a backoff (up to maxAttempts)
  * before hopping to a sibling model. Any other class (or an undefined class,
  * or sameModelRetry disabled) must jump immediately.
  */
-describe('FallbackHandler — same-model retry-in-place (#225 PR-C)', () => {
+describe('FallbackHandler — same-model retry-in-place', () => {
   let fallbackHandler: FallbackHandler;
   let mockClient: OpenCodeClient;
   let mockLogger: Logger;

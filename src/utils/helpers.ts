@@ -3,14 +3,6 @@
  */
 
 import type { MessagePart, SDKMessagePartInput, ToastMessage, OpenCodeClient } from '../types/index.js';
-import {
-  DEDUP_WINDOW_MS as DEDUP_WINDOW_MS_TYPE,
-  STATE_TIMEOUT_MS as STATE_TIMEOUT_MS_TYPE,
-} from '../types/index.js';
-
-// Re-export as constants
-export const DEDUP_WINDOW_MS = DEDUP_WINDOW_MS_TYPE;
-export const STATE_TIMEOUT_MS = STATE_TIMEOUT_MS_TYPE;
 
 /**
  * Generate a model identifier key
@@ -77,20 +69,12 @@ export function convertPartsToSDKFormat(parts: MessagePart[]): SDKMessagePartInp
 }
 
 /**
- * Extract toast message properties with fallback values
- */
-export function getToastMessage(toast: ToastMessage): { title: string; message: string; variant: string } {
-  const title = toast?.body?.title || toast?.title || "Toast";
-  const message = toast?.body?.message || toast?.message || "";
-  const variant = toast?.body?.variant || toast?.variant || "info";
-  return { title, message, variant };
-}
-
-/**
  * Safely show toast, falling back to console logging if TUI is missing or fails
  */
 export const safeShowToast = async (client: OpenCodeClient, toast: ToastMessage) => {
-  const { title, message, variant } = getToastMessage(toast);
+  const title = toast?.body?.title || toast?.title || "Toast";
+  const message = toast?.body?.message || toast?.message || "";
+  const variant = toast?.body?.variant || toast?.variant || "info";
 
   const logToConsole = () => {
     if (variant === "error") {

@@ -4,11 +4,11 @@
 
 import type { Logger } from '../../logger.js';
 import type { FallbackModel, PluginConfig, OpenCodeClient, MessagePart, SessionHierarchy, LimitClass } from '../types/index.js';
-import { SESSION_ENTRY_TTL_MS } from '../types/index.js';
+import { DEDUP_WINDOW_MS, SESSION_ENTRY_TTL_MS, STATE_TIMEOUT_MS } from '../types/index.js';
 import { MetricsManager } from '../metrics/MetricsManager.js';
 import { ModelSelector } from './ModelSelector.js';
 import { CircuitBreaker } from '../circuitbreaker/CircuitBreaker.js';
-import { extractMessageParts, convertPartsToSDKFormat, safeShowToast, getStateKey, getModelKey, formatDuration, DEDUP_WINDOW_MS, STATE_TIMEOUT_MS } from '../utils/helpers.js';
+import { extractMessageParts, convertPartsToSDKFormat, safeShowToast, getStateKey, getModelKey, formatDuration } from '../utils/helpers.js';
 import type { SubagentTracker } from '../session/SubagentTracker.js';
 import { RetryManager } from '../retry/RetryManager.js';
 import type { HealthTracker } from '../health/HealthTracker.js';
@@ -319,7 +319,7 @@ export class FallbackHandler {
         await new Promise(resolve => setTimeout(resolve, delay));
       }
 
-      // Same-model retry-in-place for per-model-transient limits (#225 / #229 PR-C).
+      // Same-model retry-in-place for per-model-transient limits.
       // For a per-model TPM burst (e.g. Alibaba Token-Plan), retry the SAME model
       // after a short backoff before hopping the chain. Bounded by maxAttempts.
       if (
@@ -476,8 +476,8 @@ export class FallbackHandler {
 
   /**
    * Build the exhaustion message. When a soonest reset time is known, surface an
-   * actionable "retry after <Δ>" ETA so a supervisor can pause instead of
-   * thrashing; otherwise fall back to the generic message (#229 / #223 AC-5).
+   * actionable "retry after <Δ>" ETA so callers can pause instead of thrashing;
+   * otherwise fall back to the generic message.
    */
   private buildExhaustionMessage(): string {
     if (this.config.fallbackMode === "stop") {

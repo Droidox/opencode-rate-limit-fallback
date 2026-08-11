@@ -42,12 +42,6 @@ export const DEFAULT_RETRY_POLICY_CONFIG = {
   jitterFactor: 0.1,
 } as const;
 
-/**
- * Default polynomial retry parameters
- */
-export const DEFAULT_POLYNOMIAL_BASE = 1.5;
-export const DEFAULT_POLYNOMIAL_EXPONENT = 2;
-
 // ============================================================================
 // Circuit Breaker Defaults
 // ============================================================================
@@ -71,6 +65,7 @@ export const DEFAULT_CIRCUIT_BREAKER_CONFIG = {
  * Default cooldown period (ms)
  */
 export const DEFAULT_COOLDOWN_MS = 60 * 1000;
+export const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Default fallback mode
@@ -169,12 +164,12 @@ export const DEFAULT_ERROR_PATTERNS_CONFIG = {
 } as const;
 
 // ============================================================================
-// Same-Model Retry Defaults (#225 / #229 PR-C)
+// Same-model retry defaults
 // ============================================================================
 
 /**
- * Default same-model retry configuration. backoffMs ~= Alibaba Token-Plan TPM
- * recovery window (~60s), maxAttempts bounded so we retry-in-place before hopping.
+ * Default same-model retry configuration. backoffMs roughly matches a typical
+ * minute-scale recovery window so transient bursts can settle before hopping.
  */
 export const DEFAULT_SAME_MODEL_RETRY_CONFIG = {
   enabled: true,

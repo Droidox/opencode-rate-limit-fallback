@@ -14,10 +14,10 @@ import type {
   SessionStatusEventProperties,
 } from "./src/types/index.js";
 import { MetricsManager } from "./src/metrics/MetricsManager.js";
+import { CLEANUP_INTERVAL_MS } from "./src/config/defaults.js";
 import { FallbackHandler } from "./src/fallback/FallbackHandler.js";
 import { loadConfig } from "./src/utils/config.js";
 import { SubagentTracker } from "./src/session/SubagentTracker.js";
-import { CLEANUP_INTERVAL_MS } from "./src/types/index.js";
 import { ConfigValidator } from "./src/config/Validator.js";
 import { ErrorPatternRegistry } from "./src/errors/PatternRegistry.js";
 import { HealthTracker } from "./src/health/HealthTracker.js";
@@ -135,12 +135,6 @@ export const RateLimitFallback: Plugin = async ({ client, directory, worktree })
 
   // Create final logger instance with loaded config
   const logger = createLogger(logConfig, "RateLimitFallback");
-
-  if (configSource) {
-    logger.info(`Config loaded from: ${configSource}`);
-  } else {
-    logger.info("No config file found, using defaults");
-  }
 
   // Log verbose mode status
   if (config.verbose) {
@@ -353,13 +347,6 @@ export const RateLimitFallback: Plugin = async ({ client, directory, worktree })
 
   return {
     event: async ({ event }) => {
-      // Debug: log all events to identify how "Free usage exceeded" arrives
-      const rawEvt = event as { type: string; properties?: unknown };
-      const evtJson = JSON.stringify(rawEvt, null, 0);
-      if (evtJson.toLowerCase().includes("exceeded") || evtJson.toLowerCase().includes("free usage") || evtJson.toLowerCase().includes("credits")) {
-        logger.info("DEBUG rate-limit-related event", { type: rawEvt.type, properties: rawEvt.properties });
-      }
-
       // Handle session.error events
       if (isSessionErrorEvent(event)) {
         const { sessionID, error } = event.properties;
