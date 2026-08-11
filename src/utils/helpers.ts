@@ -20,6 +20,19 @@ export function getModelKey(providerID: string, modelID: string): string {
 }
 
 /**
+ * Format a millisecond duration as a short human ETA (e.g. "45s", "3m", "2h").
+ */
+export function formatDuration(ms: number): string {
+  const seconds = Math.ceil(Math.max(0, ms) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return remMinutes > 0 ? `${hours}h ${remMinutes}m` : `${hours}h`;
+}
+
+/**
  * Generate a state identifier
  */
 export function getStateKey(sessionID: string, messageID: string): string {

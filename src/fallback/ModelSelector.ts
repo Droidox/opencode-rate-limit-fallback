@@ -12,8 +12,14 @@ import { safeShowToast } from '../utils/helpers.js';
 /**
  * Model Selector class for handling model selection strategies
  */
+interface RateLimitEntry {
+  limitedAt: number;
+  /** Absolute epoch-ms the model is skipped until; falls back to cooldownMs when absent. */
+  resetAt?: number;
+}
+
 export class ModelSelector {
-  private rateLimitedModels: Map<string, number>;
+  private rateLimitedModels: Map<string, RateLimitEntry>;
   private config: PluginConfig;
   private client: OpenCodeClient;
   private circuitBreaker?: CircuitBreaker;
@@ -36,13 +42,21 @@ export class ModelSelector {
   }
 
   /**
+   * Absolute epoch-ms a rate-limited entry stays skipped until: an explicit
+   * provider reset time if known, otherwise the fixed cooldown window.
+   */
+  private entryExpiry(entry: RateLimitEntry): number {
+    return entry.resetAt ?? entry.limitedAt + this.config.cooldownMs;
+  }
+
+  /**
    * Check if a model is currently rate limited
    */
   private isModelRateLimited(providerID: string, modelID: string): boolean {
     const key = getModelKey(providerID, modelID);
-    const limitedAt = this.rateLimitedModels.get(key);
-    if (!limitedAt) return false;
-    if (Date.now() - limitedAt > this.config.cooldownMs) {
+    const entry = this.rateLimitedModels.get(key);
+    if (!entry) return false;
+    if (Date.now() >= this.entryExpiry(entry)) {
       this.rateLimitedModels.delete(key);
       return false;
     }
@@ -50,11 +64,29 @@ export class ModelSelector {
   }
 
   /**
-   * Mark a model as rate limited
+   * Mark a model as rate limited. When a provider-supplied reset time is known
+   * (hard cap / Retry-After), the model is skipped until that time instead of
+   * the fixed cooldown, so a multi-hour cap is not re-probed every cooldown.
    */
-  markModelRateLimited(providerID: string, modelID: string): void {
+  markModelRateLimited(providerID: string, modelID: string, resetAt?: number): void {
     const key = getModelKey(providerID, modelID);
-    this.rateLimitedModels.set(key, Date.now());
+    this.rateLimitedModels.set(key, { limitedAt: Date.now(), resetAt });
+  }
+
+  /**
+   * Soonest absolute epoch-ms at which any currently-limited model recovers, or
+   * undefined if none are limited. Powers the actionable exhaustion signal.
+   */
+  getSoonestReset(): number | undefined {
+    const now = Date.now();
+    let soonest: number | undefined;
+    for (const entry of this.rateLimitedModels.values()) {
+      const expiry = this.entryExpiry(entry);
+      if (expiry > now && (soonest === undefined || expiry < soonest)) {
+        soonest = expiry;
+      }
+    }
+    return soonest;
   }
 
   /**
@@ -170,11 +202,12 @@ export class ModelSelector {
   async selectFallbackModel(
     currentProviderID: string,
     currentModelID: string,
-    attemptedModels: Set<string>
+    attemptedModels: Set<string>,
+    resetAt?: number
   ): Promise<FallbackModel | null> {
     // Mark current model as rate limited and add to attempted
     if (currentProviderID && currentModelID) {
-      this.markModelRateLimited(currentProviderID, currentModelID);
+      this.markModelRateLimited(currentProviderID, currentModelID, resetAt);
       attemptedModels.add(getModelKey(currentProviderID, currentModelID));
     }
 
@@ -193,8 +226,8 @@ export class ModelSelector {
    */
   cleanupStaleEntries(): void {
     const now = Date.now();
-    for (const [key, limitedAt] of this.rateLimitedModels.entries()) {
-      if (now - limitedAt > this.config.cooldownMs) {
+    for (const [key, entry] of this.rateLimitedModels.entries()) {
+      if (now >= this.entryExpiry(entry)) {
         this.rateLimitedModels.delete(key);
       }
     }
