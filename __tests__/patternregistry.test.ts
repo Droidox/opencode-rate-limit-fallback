@@ -78,6 +78,45 @@ describe('ErrorPatternRegistry', () => {
       expect(result).toBe(true);
     });
 
+    it('should ignore the benign Anthropic extra usage billing notice', () => {
+      const error = {
+        message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+      };
+
+      const result = registry.isRateLimitError(error);
+
+      expect(result).toBe(false);
+    });
+
+    it('should not let ignore patterns swallow an explicit HTTP 429 signal', () => {
+      const error = {
+        name: 'APIError',
+        data: {
+          statusCode: 429,
+          message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+        },
+      };
+
+      const result = registry.isRateLimitError(error);
+
+      expect(result).toBe(true);
+    });
+
+    it('should not let ignore patterns swallow an explicit rate_limit_error signal', () => {
+      const error = {
+        data: {
+          responseBody: JSON.stringify({
+            error: 'rate_limit_error',
+            message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+          }),
+        },
+      };
+
+      const result = registry.isRateLimitError(error);
+
+      expect(result).toBe(true);
+    });
+
     it('should detect "too many requests" keyword', () => {
       const error = {
         message: 'Too many requests, please try again later',
@@ -206,6 +245,53 @@ describe('ErrorPatternRegistry', () => {
     });
   });
 
+  describe('isIgnoredError()', () => {
+    it('should return true for the benign Anthropic extra usage notice', () => {
+      const error = {
+        message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+      };
+
+      expect(registry.isIgnoredError(error)).toBe(true);
+    });
+
+    it('should return false when a strong HTTP 429 signal is present', () => {
+      const error = {
+        data: {
+          statusCode: 429,
+          message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+        },
+      };
+
+      expect(registry.isIgnoredError(error)).toBe(false);
+    });
+
+    it('should return false when a rate_limit_error signal is present', () => {
+      const error = {
+        data: {
+          responseBody: JSON.stringify({
+            error: 'rate_limit_error',
+            message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+          }),
+        },
+      };
+
+      expect(registry.isIgnoredError(error)).toBe(false);
+    });
+
+    it('should return false for a genuine non-ignored error', () => {
+      const error = {
+        message: 'Internal server error',
+      };
+
+      expect(registry.isIgnoredError(error)).toBe(false);
+    });
+
+    it('should return false for null or non-object input', () => {
+      expect(registry.isIgnoredError(null)).toBe(false);
+      expect(registry.isIgnoredError('some string')).toBe(false);
+    });
+  });
+
   describe('getMatchedPattern()', () => {
     it('should return the matching pattern for a rate limit error', () => {
       const error = {
@@ -246,6 +332,16 @@ describe('ErrorPatternRegistry', () => {
       expect(pattern).not.toBeNull();
       expect(pattern!.priority).toBe(150);
       expect(pattern!.name).toBe('custom-high-priority');
+    });
+
+    it('should return null when an ignore pattern matches without a strong rate-limit signal', () => {
+      const error = {
+        message: 'Third-party apps now draw from your extra usage, not your plan limits.',
+      };
+
+      const pattern = registry.getMatchedPattern(error);
+
+      expect(pattern).toBeNull();
     });
   });
 
