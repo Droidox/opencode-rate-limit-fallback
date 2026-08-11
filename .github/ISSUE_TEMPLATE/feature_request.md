@@ -14,13 +14,9 @@ Describe the improvement you want to see.
 
 What limitation, workflow gap, or user need does this address?
 
-## Proposed approach
+## Proposed change
 
 Describe the behavior you would expect.
-
-## Scope
-
-Please keep proposals focused and concrete when possible.
 
 ## Alternatives considered
 

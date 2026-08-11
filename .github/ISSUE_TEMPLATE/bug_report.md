@@ -26,14 +26,14 @@ What happened instead?
 
 ## Environment
 
-- Node.js version:
 - OpenCode version:
 - Plugin version:
+- Node.js version:
 - OS:
 
-## Minimal configuration
+## Configuration
 
-If relevant, share the smallest configuration snippet that still reproduces the issue.
+Share the smallest relevant configuration snippet if it helps reproduce the problem. Please remove secrets or private values.
 
 ```json
 {}

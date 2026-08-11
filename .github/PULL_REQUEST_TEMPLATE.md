@@ -14,8 +14,4 @@ Describe the change and why it is needed.
 
 ## Notes
 
-Share any tradeoffs, compatibility considerations, or follow-up work.
-
-## Scope check
-
-- [ ] Change is focused and does not include unrelated refactors
+Share any tradeoffs, follow-ups, compatibility considerations, or scope limits. Please keep pull requests lean and avoid unrelated changes.
