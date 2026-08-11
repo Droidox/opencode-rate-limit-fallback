@@ -8,7 +8,7 @@ import { SESSION_ENTRY_TTL_MS } from '../types/index.js';
 import { MetricsManager } from '../metrics/MetricsManager.js';
 import { ModelSelector } from './ModelSelector.js';
 import { CircuitBreaker } from '../circuitbreaker/CircuitBreaker.js';
-import { extractMessageParts, convertPartsToSDKFormat, safeShowToast, getStateKey, getModelKey, DEDUP_WINDOW_MS, STATE_TIMEOUT_MS } from '../utils/helpers.js';
+import { extractMessageParts, convertPartsToSDKFormat, safeShowToast, getStateKey, getModelKey, formatDuration, DEDUP_WINDOW_MS, STATE_TIMEOUT_MS } from '../utils/helpers.js';
 import type { SubagentTracker } from '../session/SubagentTracker.js';
 import { RetryManager } from '../retry/RetryManager.js';
 import type { HealthTracker } from '../health/HealthTracker.js';
@@ -210,7 +210,7 @@ export class FallbackHandler {
   /**
    * Handle the rate limit fallback process
    */
-  async handleRateLimitFallback(sessionID: string, currentProviderID: string, currentModelID: string): Promise<void> {
+  async handleRateLimitFallback(sessionID: string, currentProviderID: string, currentModelID: string, resetAt?: number): Promise<void> {
     // Resolve target session before acquiring lock
     const rootSessionID = this.subagentTracker.getRootSession(sessionID);
     const targetSessionID = rootSessionID || sessionID;
@@ -318,20 +318,20 @@ export class FallbackHandler {
       }
 
       // Select the next fallback model
-      const nextModel = await this.modelSelector.selectFallbackModel(currentProviderID, currentModelID, state.attemptedModels);
+      const nextModel = await this.modelSelector.selectFallbackModel(currentProviderID, currentModelID, state.attemptedModels, resetAt);
 
       // Show error if no model is available
       if (!nextModel) {
+        const exhaustionMessage = this.buildExhaustionMessage();
         await safeShowToast(this.client, {
           body: {
             title: "No Fallback Available",
-            message: this.config.fallbackMode === "stop"
-              ? "All fallback models exhausted"
-              : "All models are rate limited",
+            message: exhaustionMessage,
             variant: "error",
             duration: 5000,
           },
         });
+        this.logger.warn("All fallback models exhausted", { retryAfter: exhaustionMessage });
         this.retryState.delete(stateKey);
         this.fallbackInProgress.delete(fallbackKey);
         return;
@@ -412,6 +412,23 @@ export class FallbackHandler {
     } finally {
       this.sessionLock.delete(targetSessionID);
     }
+  }
+
+  /**
+   * Build the exhaustion message. When a soonest reset time is known, surface an
+   * actionable "retry after <Δ>" ETA so a supervisor can pause instead of
+   * thrashing; otherwise fall back to the generic message (#229 / #223 AC-5).
+   */
+  private buildExhaustionMessage(): string {
+    if (this.config.fallbackMode === "stop") {
+      return "All fallback models exhausted";
+    }
+    const soonestReset = this.modelSelector.getSoonestReset();
+    if (soonestReset !== undefined) {
+      const deltaMs = Math.max(0, soonestReset - Date.now());
+      return `All models rate limited. Retry after ${formatDuration(deltaMs)}.`;
+    }
+    return "All models are rate limited";
   }
 
   /**
