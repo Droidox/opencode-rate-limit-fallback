@@ -3,7 +3,7 @@
  */
 
 import type { ErrorPattern, LearnedPattern, PatternLearningConfig, LimitClassification } from '../types/index.js';
-import type { Logger } from '../../logger.js';
+import { createLogger, type Logger } from '../../logger.js';
 import { DEFAULT_ERROR_PATTERNS_CONFIG } from '../config/defaults.js';
 import { PatternLearner } from './PatternLearner.js';
 import { ResetWindowParser } from './ResetWindowParser.js';
@@ -11,7 +11,7 @@ import { ResetWindowParser } from './ResetWindowParser.js';
 /**
  * Signals that a limit is account/plan-wide (a sibling model of the same
  * provider would hit it too) rather than per-model. Used to classify errors
- * as "account-wide" so the engine skips the whole provider (#229).
+ * as "account-wide" so the engine skips the whole provider.
  */
 const ACCOUNT_WIDE_SIGNALS: readonly (string | RegExp)[] = [
   'rate_limit_error',
@@ -28,7 +28,7 @@ const ACCOUNT_WIDE_SIGNALS: readonly (string | RegExp)[] = [
  * Signals that a limit is per-model and transient (per-minute TPM / burst that
  * recovers in ~60s), e.g. Alibaba Token Plan "Allocated quota exceeded". Used to
  * classify errors as "per-model-transient" so the engine retries the SAME model
- * after a short backoff before hopping (#225 / #229).
+ * after a short backoff before hopping.
  */
 const PER_MODEL_TRANSIENT_SIGNALS: readonly (string | RegExp)[] = [
   'allocated quota exceeded',
@@ -52,21 +52,13 @@ export class ErrorPatternRegistry {
   private learnedPatterns: LearnedPattern[] = [];
   private patternLearner: PatternLearner | null = null;
   private learningConfig: PatternLearningConfig | null = null;
-  // Logger is available for future use
-  // @ts-ignore - Unused but kept for potential future use
-  private _logger: Logger;
+  private readonly logger: Logger;
 
   constructor(
     logger?: Logger,
     ignorePatterns: readonly (string | RegExp)[] = [...(DEFAULT_ERROR_PATTERNS_CONFIG.ignorePatterns ?? [])],
   ) {
-    // Initialize logger
-    this._logger = logger || {
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    } as unknown as Logger;
+    this.logger = logger ?? createLogger({ level: 'silent' }, 'ErrorPatternRegistry');
 
     this.registerDefaultPatterns();
     this.registerIgnorePatterns(ignorePatterns);
@@ -181,7 +173,7 @@ export class ErrorPatternRegistry {
    */
   initializePatternLearning(config: PatternLearningConfig, configFilePath: string): void {
     this.learningConfig = config;
-    this.patternLearner = new PatternLearner(config, this._logger);
+    this.patternLearner = new PatternLearner(config, this.logger);
     this.patternLearner.setConfigFilePath(configFilePath);
   }
 
@@ -274,7 +266,7 @@ export class ErrorPatternRegistry {
   }
 
   /**
-   * Classify an error by its limit semantics (#229). Single decision point that
+   * Classify an error by its limit semantics. Single decision point that
    * unifies the benign-notice gate with the provider-limit taxonomy so the
    * fallback engine can act correctly (ignore / retry-same / skip-provider /
    * skip-until-reset) instead of always hopping to the next model.

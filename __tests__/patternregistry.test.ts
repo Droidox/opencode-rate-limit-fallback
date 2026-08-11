@@ -12,6 +12,12 @@ describe('ErrorPatternRegistry', () => {
   });
 
   describe('Default Patterns', () => {
+    it('should initialize without an explicit logger', () => {
+      const loggerlessRegistry = new ErrorPatternRegistry();
+
+      expect(loggerlessRegistry.getAllPatterns().length).toBeGreaterThan(0);
+    });
+
     it('should have default patterns registered on initialization', () => {
       const patterns = registry.getAllPatterns();
 

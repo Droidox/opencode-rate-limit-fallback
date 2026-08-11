@@ -137,12 +137,6 @@ export interface HealthTrackerConfig {
   minRequestsForReliableScore?: number;// Min requests before score is reliable (default: 3)
 }
 
-/**
- * Health persistence configuration (alias for HealthTrackerConfig)
- * Use this for backward compatibility.
- */
-export type HealthPersistenceConfig = HealthTrackerConfig;
-
 // ============================================================================
 // Dynamic Prioritization Types
 // ============================================================================
@@ -198,7 +192,7 @@ export interface ErrorPattern {
 }
 
 /**
- * Classification of a rate-limit-style error by its limit semantics (#229):
+ * Classification of a rate-limit-style error by its limit semantics:
  * - "benign-notice": not a limit (e.g. Anthropic "not your plan limits") — ignore.
  * - "per-model-transient": per-model TPM burst (e.g. Alibaba "Allocated quota
  *   exceeded") — retry SAME model after backoff before hopping.
@@ -278,7 +272,7 @@ export interface ConfigReloadConfig {
 }
 
 /**
- * Same-model retry-in-place configuration (#225 / #229 PR-C).
+ * Same-model retry-in-place configuration.
  * For per-model-transient limits (e.g. Alibaba Token-Plan TPM burst), retry the
  * SAME model after a short backoff instead of immediately hopping the chain.
  */
@@ -325,7 +319,7 @@ export interface PluginConfig {
   metrics?: MetricsConfig;
   configValidation?: ConfigValidationOptions;
   enableHealthBasedSelection?: boolean;
-  healthPersistence?: HealthPersistenceConfig;
+  healthPersistence?: HealthTrackerConfig;
   verbose?: boolean;
   errorPatterns?: ErrorPatternsConfig;
   configReload?: ConfigReloadConfig;
@@ -595,14 +589,6 @@ export type OpenCodeClient = {
   };
 };
 
-/**
- * Plugin context
- */
-export type PluginContext = {
-  client: OpenCodeClient;
-  directory: string;
-};
-
 // ============================================================================
 // Constants
 // ============================================================================
@@ -687,11 +673,6 @@ export const DEDUP_WINDOW_MS = 5000;
  * State timeout for retry state
  */
 export const STATE_TIMEOUT_MS = 30000;
-
-/**
- * Cleanup interval for stale entries
- */
-export const CLEANUP_INTERVAL_MS = 300000; // 5 minutes
 
 /**
  * TTL for session entries
