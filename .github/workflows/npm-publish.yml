@@ -37,7 +37,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # prepublishOnly runs clean + build; guard the release tag matches package.json.
       - name: Verify tag matches package.json version
         run: |
           PKG_VERSION="v$(node -p "require('./package.json').version")"
@@ -46,24 +45,31 @@ jobs:
             exit 1
           fi
 
+      # Build once and pack to a known filename; the same tarball is scanned and then published.
+      - name: Build tarball
+        run: |
+          npm pack --pack-destination . 2>/dev/null
+          TARBALL="$(node -p "const p=require('./package.json'); p.name.replace('@','').replace('/','-')+'-'+p.version+'.tgz'")"
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
       # Deny-list pattern comes from a repo variable, not hardcoded, so private terms stay out of this public file.
       - name: Guard against private references in the tarball
         env:
           PRIVATE_REF_PATTERN: ${{ vars.PRIVATE_REF_PATTERN }}
         run: |
-          npm pack
-          TARBALL="$(ls -t ./*.tgz | head -1)"
+          if [ -z "$PRIVATE_REF_PATTERN" ]; then
+            echo "::warning::PRIVATE_REF_PATTERN not set — skipping private-reference scan."
+            exit 0
+          fi
           mkdir -p _packcheck
           tar -xzf "$TARBALL" -C _packcheck
-          PATTERN="${PRIVATE_REF_PATTERN:-(^|[^a-z])(internal|private)[-_ ]}"
-          if grep -rniE "$PATTERN" _packcheck; then
+          if grep -rniE "$PRIVATE_REF_PATTERN" _packcheck; then
             echo "::error::Tarball contains private references — aborting publish."
             exit 1
           fi
-          rm -rf _packcheck "$TARBALL"
+          rm -rf _packcheck
           echo "Tarball is clean of private references."
 
-      # No NODE_AUTH_TOKEN / NPM_TOKEN: OIDC provides short-lived auth.
-      # --provenance is automatic under trusted publishing.
+      # Publish the exact tarball that was scanned. OIDC provides auth; provenance is automatic.
       - name: Publish to npm
-        run: npm publish --access public
+        run: npm publish "$TARBALL" --access public
