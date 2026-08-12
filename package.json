@@ -1,6 +1,6 @@
 {
   "name": "@droidox/opencode-rate-limit-fallback",
-  "version": "1.73.0",
+  "version": "1.73.1",
   "description": "OpenCode plugin that automatically switches to fallback models when rate limited",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
