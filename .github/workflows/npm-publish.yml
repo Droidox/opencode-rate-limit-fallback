@@ -46,6 +46,23 @@ jobs:
             exit 1
           fi
 
+      # Deny-list pattern comes from a repo variable, not hardcoded, so private terms stay out of this public file.
+      - name: Guard against private references in the tarball
+        env:
+          PRIVATE_REF_PATTERN: ${{ vars.PRIVATE_REF_PATTERN }}
+        run: |
+          npm pack
+          TARBALL="$(ls -t ./*.tgz | head -1)"
+          mkdir -p _packcheck
+          tar -xzf "$TARBALL" -C _packcheck
+          PATTERN="${PRIVATE_REF_PATTERN:-(^|[^a-z])(internal|private)[-_ ]}"
+          if grep -rniE "$PATTERN" _packcheck; then
+            echo "::error::Tarball contains private references — aborting publish."
+            exit 1
+          fi
+          rm -rf _packcheck "$TARBALL"
+          echo "Tarball is clean of private references."
+
       # No NODE_AUTH_TOKEN / NPM_TOKEN: OIDC provides short-lived auth.
       # --provenance is automatic under trusted publishing.
       - name: Publish to npm
