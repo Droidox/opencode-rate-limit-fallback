@@ -1,6 +1,6 @@
-# @azumag/opencode-rate-limit-fallback
+# @droidox/opencode-rate-limit-fallback
 
-[![npm version](https://badge.fury.io/js/@azumag%2Fopencode-rate-limit-fallback.svg)](https://www.npmjs.com/package/@azumag/opencode-rate-limit-fallback)
+[![npm version](https://badge.fury.io/js/@droidox%2Fopencode-rate-limit-fallback.svg)](https://www.npmjs.com/package/@droidox/opencode-rate-limit-fallback)
 
 OpenCode plugin that automatically switches to fallback models when rate limited.
 
@@ -33,7 +33,7 @@ Add the plugin to your `opencode.json`:
 
 ```json
 {
-  "plugins": ["@azumag/opencode-rate-limit-fallback"]
+  "plugins": ["@droidox/opencode-rate-limit-fallback"]
 }
 ```
 
@@ -46,7 +46,7 @@ Copy `index.ts` to your OpenCode plugins directory:
 ```bash
 mkdir -p ~/.config/opencode/plugins
 curl -o ~/.config/opencode/plugins/rate-limit-fallback.ts \
-  https://raw.githubusercontent.com/azumag/opencode-rate-limit-fallback/main/index.ts
+  https://raw.githubusercontent.com/Droidox/opencode-rate-limit-fallback/main/index.ts
 ```
 
 Restart OpenCode to load the plugin.
