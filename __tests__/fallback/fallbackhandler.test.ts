@@ -506,4 +506,87 @@ describe('FallbackHandler', () => {
       expect(mockClient.tui?.showToast).toHaveBeenCalled();
     });
   });
+
+  describe('Preferred Model Recovery (issue #346)', () => {
+    const userMessage = {
+      info: { id: 'msg-1', role: 'user' },
+      parts: [{ type: 'text', text: 'hello' }],
+    };
+
+    beforeEach(() => {
+      mockClient.session.messages = vi.fn().mockResolvedValue({
+        data: [userMessage],
+      });
+      mockClient.session.abort = vi.fn().mockResolvedValue(undefined);
+      mockClient.session.promptAsync = vi.fn().mockResolvedValue(undefined);
+      mockSubagentTracker.getRootSession = vi.fn().mockReturnValue(null);
+      mockSubagentTracker.getHierarchy = vi.fn().mockReturnValue(null);
+    });
+
+    describe('getOriginalSessionModel()', () => {
+      it('should return null when no model has been set', () => {
+        expect(fallbackHandler.getOriginalSessionModel('session-1')).toBeNull();
+      });
+
+      it('should return the first model set for a session, not the latest', () => {
+        fallbackHandler.setSessionModel('session-1', 'anthropic', 'claude-3-5-sonnet-20250514');
+        fallbackHandler.setSessionModel('session-1', 'google', 'gemini-2.5-pro');
+        const original = fallbackHandler.getOriginalSessionModel('session-1');
+        expect(original).toEqual({
+          providerID: 'anthropic',
+          modelID: 'claude-3-5-sonnet-20250514',
+        });
+      });
+    });
+
+    describe('attemptOriginalModelRecovery()', () => {
+      it('should return false when no original model is recorded', async () => {
+        const result = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(result).toBe(false);
+      });
+
+      it('should return false when already on the original model', async () => {
+        fallbackHandler.setSessionModel('session-1', 'anthropic', 'claude-3-5-sonnet-20250514');
+        const result = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(result).toBe(false);
+        expect(mockClient.session.abort).not.toHaveBeenCalled();
+      });
+
+      it('should recover to original model when it is healthy', async () => {
+        fallbackHandler.setSessionModel('session-1', 'anthropic', 'claude-3-5-sonnet-20250514');
+        fallbackHandler.setSessionModel('session-1', 'google', 'gemini-2.5-pro');
+        const result = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(result).toBe(true);
+        expect(mockClient.session.abort).toHaveBeenCalledWith({ path: { id: 'session-1' } });
+        expect(mockClient.session.promptAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            path: { id: 'session-1' },
+            body: expect.objectContaining({
+              model: { providerID: 'anthropic', modelID: 'claude-3-5-sonnet-20250514' },
+            }),
+          })
+        );
+      });
+
+      it('should not recover when original model is still rate-limited', async () => {
+        fallbackHandler.setSessionModel('session-1', 'anthropic', 'claude-3-5-sonnet-20250514');
+        fallbackHandler.setSessionModel('session-1', 'google', 'gemini-2.5-pro');
+        fallbackHandler.getModelSelector().markModelRateLimited('anthropic', 'claude-3-5-sonnet-20250514');
+        const result = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(result).toBe(false);
+        expect(mockClient.session.abort).not.toHaveBeenCalled();
+      });
+
+      it('should not attempt recovery more than once per cooldown window (flip-flop prevention)', async () => {
+        fallbackHandler.setSessionModel('session-1', 'anthropic', 'claude-3-5-sonnet-20250514');
+        fallbackHandler.setSessionModel('session-1', 'google', 'gemini-2.5-pro');
+        const firstResult = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(firstResult).toBe(true);
+        fallbackHandler.setSessionModel('session-1', 'google', 'gemini-2.5-pro');
+        const secondResult = await fallbackHandler.attemptOriginalModelRecovery('session-1');
+        expect(secondResult).toBe(false);
+        expect(mockClient.session.abort).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
 });

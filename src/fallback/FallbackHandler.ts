@@ -24,6 +24,8 @@ export class FallbackHandler {
   private logger: Logger;
   private modelSelector: ModelSelector;
   private currentSessionModel: Map<string, { providerID: string; modelID: string; lastUpdated: number }>;
+  private originalSessionModel: Map<string, { providerID: string; modelID: string }>;
+  private recoveryAttempts: Map<string, number>;
   private modelRequestStartTimes: Map<string, number>;
   private retryState: Map<string, { attemptedModels: Set<string>; lastAttemptTime: number }>;
   private fallbackInProgress: Map<string, number>;
@@ -78,6 +80,8 @@ export class FallbackHandler {
     this.modelSelector = new ModelSelector(config, client, this.circuitBreaker, healthTracker, this.dynamicPrioritizer);
 
     this.currentSessionModel = new Map();
+    this.originalSessionModel = new Map();
+    this.recoveryAttempts = new Map();
     this.modelRequestStartTimes = new Map();
     this.retryState = new Map();
     this.fallbackInProgress = new Map();
@@ -123,6 +127,15 @@ export class FallbackHandler {
   getSessionModel(sessionID: string): { providerID: string; modelID: string } | null {
     const tracked = this.currentSessionModel.get(sessionID);
     return tracked ? { providerID: tracked.providerID, modelID: tracked.modelID } : null;
+  }
+
+  getOriginalSessionModel(sessionID: string): { providerID: string; modelID: string } | null {
+    const original = this.originalSessionModel.get(sessionID);
+    return original ? { providerID: original.providerID, modelID: original.modelID } : null;
+  }
+
+  getModelSelector(): ModelSelector {
+    return this.modelSelector;
   }
 
   /**
@@ -207,6 +220,61 @@ export class FallbackHandler {
         duration: 3000,
       },
     });
+  }
+
+  async attemptOriginalModelRecovery(sessionID: string): Promise<boolean> {
+    const original = this.originalSessionModel.get(sessionID);
+    if (!original) return false;
+
+    const current = this.currentSessionModel.get(sessionID);
+    if (!current) return false;
+
+    if (current.providerID === original.providerID && current.modelID === original.modelID) {
+      return false;
+    }
+
+    const lastAttempt = this.recoveryAttempts.get(sessionID);
+    if (lastAttempt !== undefined && Date.now() - lastAttempt < this.config.cooldownMs) {
+      return false;
+    }
+    this.recoveryAttempts.set(sessionID, Date.now());
+
+    const modelKey = getModelKey(original.providerID, original.modelID);
+    if (this.modelSelector.isModelRateLimited(original.providerID, original.modelID)) {
+      this.logger.debug(`Original model ${modelKey} still rate-limited, skipping recovery`);
+      return false;
+    }
+    if (!this.modelSelector.isModelAvailable(original.providerID, original.modelID)) {
+      this.logger.debug(`Original model ${modelKey} circuit breaker open, skipping recovery`);
+      return false;
+    }
+
+    this.logger.info(`Recovering session ${sessionID} to original model ${modelKey}`);
+    await safeShowToast(this.client, {
+      body: {
+        title: "Model Recovered",
+        message: `Recovered to original model: ${original.modelID}`,
+        variant: "success",
+        duration: 3000,
+      },
+    });
+
+    const messagesResult = await this.client.session.messages({ path: { id: sessionID } });
+    if (!messagesResult.data) return false;
+    const messages = messagesResult.data;
+    const lastUserMessage = [...messages].reverse().find(m => m.info.role === "user");
+    if (!lastUserMessage) return false;
+    const parts = extractMessageParts(lastUserMessage);
+    if (parts.length === 0) return false;
+
+    const hierarchy = this.subagentTracker.getHierarchy(sessionID);
+    await this.retryWithModel(
+      sessionID,
+      { providerID: original.providerID, modelID: original.modelID },
+      parts,
+      hierarchy
+    );
+    return true;
   }
 
   /**
@@ -558,6 +626,9 @@ export class FallbackHandler {
    * Set model for a session
    */
   setSessionModel(sessionID: string, providerID: string, modelID: string): void {
+    if (!this.originalSessionModel.has(sessionID)) {
+      this.originalSessionModel.set(sessionID, { providerID, modelID });
+    }
     this.currentSessionModel.set(sessionID, {
       providerID,
       modelID,
@@ -589,6 +660,12 @@ export class FallbackHandler {
       }
     }
 
+    for (const [sessionID, timestamp] of this.recoveryAttempts.entries()) {
+      if (now - timestamp > this.config.cooldownMs) {
+        this.recoveryAttempts.delete(sessionID);
+      }
+    }
+
     for (const [fallbackKey, fallbackInfo] of this.fallbackMessages.entries()) {
       if (now - fallbackInfo.timestamp > SESSION_ENTRY_TTL_MS) {
         this.fallbackInProgress.delete(fallbackKey);
@@ -610,6 +687,8 @@ export class FallbackHandler {
    */
   destroy(): void {
     this.currentSessionModel.clear();
+    this.originalSessionModel.clear();
+    this.recoveryAttempts.clear();
     this.modelRequestStartTimes.clear();
     this.retryState.clear();
     this.fallbackInProgress.clear();

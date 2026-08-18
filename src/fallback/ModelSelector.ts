@@ -52,7 +52,7 @@ export class ModelSelector {
   /**
    * Check if a model is currently rate limited
    */
-  private isModelRateLimited(providerID: string, modelID: string): boolean {
+  isModelRateLimited(providerID: string, modelID: string): boolean {
     const key = getModelKey(providerID, modelID);
     const entry = this.rateLimitedModels.get(key);
     if (!entry) return false;
@@ -145,7 +145,7 @@ export class ModelSelector {
   /**
    * Check if a model is available (not rate limited and not blocked by circuit breaker)
    */
-  private isModelAvailable(providerID: string, modelID: string): boolean {
+  isModelAvailable(providerID: string, modelID: string): boolean {
     // Check circuit breaker if enabled
     if (this.circuitBreaker && this.config.circuitBreaker?.enabled) {
       const modelKey = getModelKey(providerID, modelID);

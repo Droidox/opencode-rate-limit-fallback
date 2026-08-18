@@ -383,8 +383,8 @@ export const RateLimitFallback: Plugin = async ({ client, directory, worktree })
           const { resetAt, limitClass } = errorPatternRegistry.classifyLimit(info.error, info.providerID);
           await fallbackHandler.handleRateLimitFallback(info.sessionID, info.providerID || "", info.modelID || "", resetAt, limitClass);
         } else if (info?.status === "completed" && !info?.error && info?.id) {
-          // Record fallback success
           fallbackHandler.handleMessageUpdated(info.sessionID, info.id, false, false);
+          await fallbackHandler.attemptOriginalModelRecovery(info.sessionID);
         } else if (info?.error && errorPatternRegistry.isIgnoredError(info.error) && info?.id) {
           logger.debug('Ignored benign notice - not counting as circuit-breaker failure', { sessionID: info.sessionID, messageID: info.id });
         } else if (info?.error && !errorPatternRegistry.isRateLimitError(info.error) && info?.id) {
