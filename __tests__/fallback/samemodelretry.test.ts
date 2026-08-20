@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ErrorPatternRegistry } from '../../src/errors/PatternRegistry.js';
 import { FallbackHandler } from '../../src/fallback/FallbackHandler.js';
 import { MetricsManager } from '../../src/metrics/MetricsManager.js';
 import { SubagentTracker } from '../../src/session/SubagentTracker.js';
@@ -158,6 +159,27 @@ describe('FallbackHandler — same-model retry-in-place', () => {
     expect(modelSelector.isModelRateLimited(CURRENT.providerID, CURRENT.modelID)).toBe(true);
     expect(modelSelector.isModelRateLimited(SIBLING.providerID, SIBLING.modelID)).toBe(true);
     expect(modelSelector.isModelRateLimited(OTHER_PROVIDER.providerID, OTHER_PROVIDER.modelID)).toBe(false);
+  });
+
+  it('(e2) Alibaba allocated-quota classification triggers provider-wide skip', async () => {
+    const registry = new ErrorPatternRegistry(mockLogger);
+    const classification = registry.classifyLimit(
+      { message: 'Allocated quota exceeded, please try again later' },
+      CURRENT.providerID,
+    );
+
+    expect(classification.limitClass).toBe('account-wide');
+
+    const promise = fallbackHandler.handleRateLimitFallback(
+      'session-1', CURRENT.providerID, CURRENT.modelID, classification.resetAt, classification.limitClass
+    );
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const models = promptedModels();
+    expect(models).toHaveLength(1);
+    expect(models[0]?.providerID).not.toBe(CURRENT.providerID);
+    expect(models[0]).toEqual(OTHER_PROVIDER);
   });
 
   it('(f) fallbackMode "cycle" does not re-offer a provider-wide-skipped sibling mid-cycle', async () => {

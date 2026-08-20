@@ -94,7 +94,7 @@ describe('ErrorPatternRegistry', () => {
       expect(result).toBe(false);
     });
 
-    it('should not let ignore patterns swallow an explicit HTTP 429 signal', () => {
+    it('should let ignore patterns suppress a bare HTTP 429 signal', () => {
       const error = {
         name: 'APIError',
         data: {
@@ -105,7 +105,7 @@ describe('ErrorPatternRegistry', () => {
 
       const result = registry.isRateLimitError(error);
 
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
     it('should not let ignore patterns swallow an explicit rate_limit_error signal', () => {
@@ -260,7 +260,7 @@ describe('ErrorPatternRegistry', () => {
       expect(registry.isIgnoredError(error)).toBe(true);
     });
 
-    it('should return false when a strong HTTP 429 signal is present', () => {
+    it('should return true when a benign phrase carries a bare HTTP 429 signal', () => {
       const error = {
         data: {
           statusCode: 429,
@@ -268,7 +268,7 @@ describe('ErrorPatternRegistry', () => {
         },
       };
 
-      expect(registry.isIgnoredError(error)).toBe(false);
+      expect(registry.isIgnoredError(error)).toBe(true);
     });
 
     it('should return false when a rate_limit_error signal is present', () => {

@@ -138,9 +138,9 @@ Built-in ignore patterns:
 - `not your plan limits`
 - `draw from your extra usage`
 
-Strong signals still win over the ignore list:
+Explicit provider error types still win over the ignore list, and a bare HTTP
+429 without a benign phrase remains a real limit:
 
-- HTTP `429`
 - explicit `rate_limit_error`
 
 Use `errorPatterns.ignorePatterns` to add your own false-positive suppressions:

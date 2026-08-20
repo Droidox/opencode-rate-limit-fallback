@@ -21,9 +21,44 @@ describe('ErrorPatternRegistry.classifyLimit', () => {
     expect(result.provider).toBe('anthropic');
   });
 
-  it('classifies Alibaba "Allocated quota exceeded" as per-model-transient', () => {
+  it('classifies Alibaba "Allocated quota exceeded" as account-wide', () => {
     const err = { message: 'Allocated quota exceeded, please try again later' };
+    expect(registry.classifyLimit(err, 'alibaba').limitClass).toBe('account-wide');
+  });
+
+  it('classifies Alibaba "Requests rate limit exceeded" as per-model-transient', () => {
+    const err = { message: 'Requests rate limit exceeded, please try again later' };
     expect(registry.classifyLimit(err, 'alibaba').limitClass).toBe('per-model-transient');
+  });
+
+  it('classifies a benign Anthropic notice with bare 429 as benign-notice', () => {
+    const err = {
+      data: {
+        responseBody: 'HTTP 429: You will draw from your extra usage, not your plan limits.',
+        statusCode: 429,
+      },
+    };
+
+    expect(registry.classifyLimit(err, 'anthropic').limitClass).toBe('benign-notice');
+    expect(registry.isIgnoredError(err)).toBe(true);
+  });
+
+  it('classifies a bare 429 without a benign phrase as a real limit', () => {
+    const err = { data: { responseBody: 'HTTP 429', statusCode: 429 } };
+    expect(registry.classifyLimit(err, 'anthropic').limitClass).toBe('unknown-limit');
+    expect(registry.isRateLimitError(err)).toBe(true);
+  });
+
+  it('keeps rate_limit_error stronger than a benign phrase', () => {
+    const err = {
+      data: {
+        responseBody: 'HTTP 429 rate_limit_error: not your plan limits',
+        statusCode: 429,
+      },
+    };
+
+    expect(registry.classifyLimit(err, 'anthropic').limitClass).toBe('account-wide');
+    expect(registry.isIgnoredError(err)).toBe(false);
   });
 
   it('classifies an error carrying a reset time as hard-cap-with-reset', () => {
