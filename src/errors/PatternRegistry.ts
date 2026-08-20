@@ -21,17 +21,17 @@ const ACCOUNT_WIDE_SIGNALS: readonly (string | RegExp)[] = [
   'plan_limit',
   'daily limit',
   'insufficient_quota',
+  'allocated quota exceeded',
   'you exceeded your current quota',
 ];
 
 /**
  * Signals that a limit is per-model and transient (per-minute TPM / burst that
- * recovers in ~60s), e.g. Alibaba Token Plan "Allocated quota exceeded". Used to
- * classify errors as "per-model-transient" so the engine retries the SAME model
- * after a short backoff before hopping.
+ * recovers in ~60s), e.g. Alibaba Token Plan "Requests rate limit exceeded".
+ * Used to classify errors as "per-model-transient" so the engine retries the
+ * SAME model after a short backoff before hopping.
  */
 const PER_MODEL_TRANSIENT_SIGNALS: readonly (string | RegExp)[] = [
-  'allocated quota exceeded',
   'requests rate limit exceeded',
   'tokens per minute',
   'tpm',
@@ -233,9 +233,9 @@ export class ErrorPatternRegistry {
   }
 
   /**
-   * True for a benign ignorePattern notice with no strong rate-limit signal.
-   * Consumers use this to skip side effects (e.g. circuit-breaker failures)
-   * that a benign notice must not trigger.
+   * True for a benign ignorePattern notice with no explicit rate-limit signal.
+   * A bare HTTP 429 carried alongside the benign phrase is still benign; an
+   * explicit provider error type such as `rate_limit_error` is not.
    */
   isIgnoredError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
@@ -363,8 +363,7 @@ export class ErrorPatternRegistry {
     // Combine all text sources for matching
     const allText = [responseBody, message, name, statusCode].join(' ').toLowerCase();
 
-    const hasStrongRateLimitSignal = this.hasStrongRateLimitSignal(allText);
-    if (!hasStrongRateLimitSignal && this.matchesIgnorePattern(allText)) {
+    if (!this.hasStrongRateLimitSignal(allText) && this.matchesIgnorePattern(allText)) {
       return null;
     }
 
@@ -484,7 +483,11 @@ export class ErrorPatternRegistry {
   }
 
   private hasStrongRateLimitSignal(text: string): boolean {
-    return this.matchesPattern(/\b429\b/i, text) || this.matchesPattern('rate_limit_error', text);
+    if (this.matchesPattern('rate_limit_error', text)) {
+      return true;
+    }
+
+    return this.matchesPattern(/\b429\b/i, text) && !this.matchesIgnorePattern(text);
   }
 
   private matchesPattern(pattern: string | RegExp, text: string): boolean {

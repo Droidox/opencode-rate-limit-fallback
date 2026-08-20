@@ -285,7 +285,7 @@ describe('isRateLimitError', () => {
     expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
   });
 
-  it('should still fallback on HTTP 429 even when the body contains the ignored billing notice', async () => {
+  it('should not fallback on a benign billing notice that carries bare HTTP 429', async () => {
     const error = {
       name: 'APIError',
       data: {
@@ -310,7 +310,8 @@ describe('isRateLimitError', () => {
       },
     });
 
-    expect(mockClient.session.abort).toHaveBeenCalled();
+    expect(mockClient.session.abort).not.toHaveBeenCalled();
+    expect(mockClient.session.promptAsync).not.toHaveBeenCalled();
   });
 });
 
