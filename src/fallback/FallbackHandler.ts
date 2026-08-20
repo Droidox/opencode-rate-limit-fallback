@@ -445,6 +445,18 @@ export class FallbackHandler {
         this.sameModelRetries.delete(sameModelKey);
       }
 
+      // Provider-wide skip: an `account-wide` limit means every sibling model of
+      // the same provider is exhausted too, not just the one that failed — mark
+      // them all rate-limited (with the same resetAt semantics) before selection
+      // so `selectFallbackModel`/`findNextAvailableModel` never offers a sibling.
+      if (limitClass === 'account-wide' && currentProviderID) {
+        for (const m of this.config.fallbackModels) {
+          if (m.providerID === currentProviderID) {
+            this.modelSelector.markModelRateLimited(m.providerID, m.modelID, resetAt);
+          }
+        }
+      }
+
       // Select the next fallback model
       const nextModel = await this.modelSelector.selectFallbackModel(currentProviderID, currentModelID, state.attemptedModels, resetAt);
 
