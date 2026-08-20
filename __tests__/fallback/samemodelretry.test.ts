@@ -21,6 +21,7 @@ describe('FallbackHandler — same-model retry-in-place', () => {
 
   const CURRENT = { providerID: 'alibaba', modelID: 'glm-5.2-tokenplan' };
   const SIBLING = { providerID: 'alibaba', modelID: 'deepseek-v4-pro' };
+  const OTHER_PROVIDER = { providerID: 'openai', modelID: 'gpt-5.4' };
 
   const promptedModels = () =>
     vi.mocked(mockClient.session.promptAsync).mock.calls.map(
@@ -66,7 +67,7 @@ describe('FallbackHandler — same-model retry-in-place', () => {
     } as unknown as SubagentTracker;
 
     config = {
-      fallbackModels: [CURRENT, SIBLING],
+      fallbackModels: [CURRENT, SIBLING, OTHER_PROVIDER],
       cooldownMs: 5000,
       enabled: true,
       fallbackMode: 'cycle',
@@ -134,7 +135,7 @@ describe('FallbackHandler — same-model retry-in-place', () => {
     expect(models[models.length - 1]).toEqual(SIBLING);
   });
 
-  it('(c) account-wide jumps immediately (no same-model retry)', async () => {
+  it('(c) account-wide jumps immediately to a DIFFERENT provider, skipping the same-provider sibling', async () => {
     const promise = fallbackHandler.handleRateLimitFallback(
       'session-1', CURRENT.providerID, CURRENT.modelID, undefined, 'account-wide'
     );
@@ -143,7 +144,45 @@ describe('FallbackHandler — same-model retry-in-place', () => {
 
     const models = promptedModels();
     expect(models).toHaveLength(1);
-    expect(models[0]).toEqual(SIBLING);
+    expect(models[0]).toEqual(OTHER_PROVIDER);
+  });
+
+  it('(e) account-wide marks ALL same-provider siblings rate-limited, not just the failing model', async () => {
+    const promise = fallbackHandler.handleRateLimitFallback(
+      'session-1', CURRENT.providerID, CURRENT.modelID, undefined, 'account-wide'
+    );
+    await vi.runAllTimersAsync();
+    await promise;
+
+    const modelSelector = fallbackHandler.getModelSelector();
+    expect(modelSelector.isModelRateLimited(CURRENT.providerID, CURRENT.modelID)).toBe(true);
+    expect(modelSelector.isModelRateLimited(SIBLING.providerID, SIBLING.modelID)).toBe(true);
+    expect(modelSelector.isModelRateLimited(OTHER_PROVIDER.providerID, OTHER_PROVIDER.modelID)).toBe(false);
+  });
+
+  it('(f) fallbackMode "cycle" does not re-offer a provider-wide-skipped sibling mid-cycle', async () => {
+    // First account-wide failure marks the whole alibaba provider skipped, with a
+    // far-future resetAt so the skip outlives the dedup-window wait below.
+    const farFutureResetAt = Date.now() + 60 * 60 * 1000;
+    const promise1 = fallbackHandler.handleRateLimitFallback(
+      'session-1', CURRENT.providerID, CURRENT.modelID, farFutureResetAt, 'account-wide'
+    );
+    await vi.runAllTimersAsync();
+    await promise1;
+    await vi.advanceTimersByTimeAsync(6000); // clear dedup window (cooldownMs unaffected: resetAt is far future)
+
+    // Second fallback (from OTHER_PROVIDER, e.g. it also failed) triggers "cycle"
+    // mode, which resets attemptedModels and searches from index 0 — it must NOT
+    // re-offer the alibaba sibling since it is still provider-wide rate-limited.
+    const promise2 = fallbackHandler.handleRateLimitFallback(
+      'session-1', OTHER_PROVIDER.providerID, OTHER_PROVIDER.modelID, undefined, 'unknown-limit'
+    );
+    await vi.runAllTimersAsync();
+    await promise2;
+
+    const models = promptedModels();
+    expect(models[models.length - 1]).not.toEqual(SIBLING);
+    expect(models[models.length - 1]).not.toEqual(CURRENT);
   });
 
   it('(c2) undefined limitClass jumps immediately (legacy behavior)', async () => {
